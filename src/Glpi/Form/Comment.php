@@ -176,6 +176,16 @@ final class Comment extends CommonDBChild implements BlockInterface, Conditionna
         return $this->getItem()->getItem();
     }
 
+    public function getUniqueIDInForm(): string
+    {
+        return sprintf(
+            "%s-%s-%s",
+            $this->getItem()->fields['rank'],
+            $this->fields['vertical_rank'],
+            $this->fields['horizontal_rank'],
+        );
+    }
+
     /**
      * Manually update logs of the parent form item
      *
