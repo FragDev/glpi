@@ -57,8 +57,8 @@ final class MigrationManager
             return $result;
         }
 
-        // Process migration of forms
         (new FormMigration($this, $result))->processMigrationOfForms();
+        (new AccessTypesMigration($this, $result))->processMigrationOfFormAccessTypes();
 
         return $result;
     }
@@ -141,6 +141,9 @@ final class MigrationManager
             'glpi_plugin_formcreator_forms',
             'glpi_plugin_formcreator_sections',
             'glpi_plugin_formcreator_questions',
+            'glpi_plugin_formcreator_forms_users',
+            'glpi_plugin_formcreator_forms_groups',
+            'glpi_plugin_formcreator_forms_profiles'
         ];
         $missing_tables = false;
         foreach ($formcreator_tables as $table) {

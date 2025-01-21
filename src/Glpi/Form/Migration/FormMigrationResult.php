@@ -43,10 +43,13 @@ class FormMigrationResult
 
     // Stockage des statuts de migration par formulaire
     private array $forms_status = [];
+    private array $access_types_status = [];
 
     public const STATUS_SUCCESS = 'success';
     public const STATUS_PARTIAL = 'partial';
     public const STATUS_FAILED = 'failed';
+    public const ACCESS_STATUS_SUCCESS = 'success';
+    public const ACCESS_STATUS_FAILED = 'failed';
 
     private array $skipped_questions = [];
 
@@ -130,5 +133,33 @@ class FormMigrationResult
     public function getSkippedQuestions(): array
     {
         return $this->skipped_questions;
+    }
+
+    public function addAccessTypeStatus(string $form_name, string $status, ?string $details = null): void
+    {
+        $this->access_types_status[] = [
+            'name' => $form_name,
+            'status' => $status,
+            'details' => $details
+        ];
+    }
+
+    public function getAccessTypesStatus(): array
+    {
+        return $this->access_types_status;
+    }
+
+    public function getAccessTypesStatusSummary(): array
+    {
+        $summary = [
+            self::ACCESS_STATUS_SUCCESS => 0,
+            self::ACCESS_STATUS_FAILED => 0,
+        ];
+
+        foreach ($this->access_types_status as $status) {
+            $summary[$status['status']]++;
+        }
+
+        return $summary;
     }
 }

@@ -94,25 +94,61 @@ class ConsoleFormMigrationResult extends FormMigrationResult
         );
     }
 
+    public function addAccessTypeStatus(string $form_name, string $status, ?string $details = null): void
+    {
+        parent::addAccessTypeStatus($form_name, $status, $details);
+
+        $status_symbols = [
+            self::ACCESS_STATUS_SUCCESS => '✓',
+            self::ACCESS_STATUS_FAILED  => '✗',
+        ];
+
+        $status_styles = [
+            self::ACCESS_STATUS_SUCCESS => 'info',
+            self::ACCESS_STATUS_FAILED  => 'error',
+        ];
+
+        $message = sprintf(
+            '%s [%s] Access Type migration %s',
+            $status_symbols[$status],
+            $form_name,
+            $details ? "($details)" : ''
+        );
+
+        $this->output->writeln(
+            sprintf('<%s>%s</%s>', $status_styles[$status], $message, $status_styles[$status])
+        );
+    }
+
     public function displayMigrationSummary(): void
     {
         $this->output->writeln("\nMigration Summary:");
 
         $table = new Table($this->output);
-        $table->setHeaders(['Form', 'Status', 'Questions', 'Details']);
+        $table->setHeaders(['Form', 'Questions', 'Access control', 'Issues', 'Details']);
 
         $forms_status = $this->getFormsStatus();
+        $access_types_status = array_column($this->getAccessTypesStatus(), null, 'name');
         $skipped_questions = $this->getSkippedQuestions();
 
-        $status_decorators = [
+        $form_status_decorators = [
             self::STATUS_SUCCESS => ['symbol' => '✓', 'style' => 'info'],
             self::STATUS_PARTIAL => ['symbol' => '~', 'style' => 'comment'],
             self::STATUS_FAILED  => ['symbol' => '✗', 'style' => 'error'],
         ];
 
+        $access_status_decorators = [
+            self::ACCESS_STATUS_SUCCESS => ['symbol' => '✓', 'style' => 'info'],
+            self::ACCESS_STATUS_FAILED  => ['symbol' => '✗', 'style' => 'error'],
+        ];
+
         foreach ($forms_status as $form) {
             $form_name = $form['name'];
-            $decorator = $status_decorators[$form['status']];
+            $form_decorator = $form_status_decorators[$form['status']];
+
+            // Get access status if exists
+            $access_status = $access_types_status[$form_name] ?? null;
+            $access_decorator = $access_status ? $access_status_decorators[$access_status['status']] : null;
 
             // Count skipped questions
             $issues_count = isset($skipped_questions[$form_name]) ? count($skipped_questions[$form_name]) : 0;
@@ -128,11 +164,18 @@ class ConsoleFormMigrationResult extends FormMigrationResult
                 $form_name,
                 sprintf(
                     '<%s>%s %s</%s>',
-                    $decorator['style'],
-                    $decorator['symbol'],
+                    $form_decorator['style'],
+                    $form_decorator['symbol'],
                     ucfirst($form['status']),
-                    $decorator['style']
+                    $form_decorator['style']
                 ),
+                $access_decorator ? sprintf(
+                    '<%s>%s %s</%s>',
+                    $access_decorator['style'],
+                    $access_decorator['symbol'],
+                    ucfirst($access_status['status']),
+                    $access_decorator['style']
+                ) : '',
                 $issues_text,
                 $form['details'] ? sprintf('<comment>%s</comment>', $form['details']) : ''
             ]);
@@ -141,6 +184,7 @@ class ConsoleFormMigrationResult extends FormMigrationResult
             if (isset($skipped_questions[$form_name])) {
                 foreach ($skipped_questions[$form_name] as $q) {
                     $table->addRow([
+                        '',
                         '',
                         '',
                         '',
@@ -153,11 +197,24 @@ class ConsoleFormMigrationResult extends FormMigrationResult
                     ]);
                 }
             }
+
+            // Add access error details if any
+            if ($access_status && $access_status['details']) {
+                $table->addRow([
+                    '',
+                    '',
+                    '',
+                    '',
+                    sprintf('<error>↳ Access: %s</error>', $access_status['details'])
+                ]);
+            }
         }
 
         // Add summary totals at the bottom
-        $summary = $this->getFormStatusSummary();
+        $form_summary = $this->getFormStatusSummary();
+        $access_summary = $this->getAccessTypesStatusSummary();
         $table->addRow(new TableSeparator());
+
         $total_issues = array_reduce(
             $skipped_questions,
             fn ($carry, $questions) => $carry + count($questions),
@@ -165,12 +222,17 @@ class ConsoleFormMigrationResult extends FormMigrationResult
         );
 
         $table->addRow([
-            'Total Forms',
+            'Totals',
             sprintf(
                 '<info>✓:%d</info> <comment>~:%d</comment> <error>✗:%d</error>',
-                $summary[self::STATUS_SUCCESS],
-                $summary[self::STATUS_PARTIAL],
-                $summary[self::STATUS_FAILED]
+                $form_summary[self::STATUS_SUCCESS],
+                $form_summary[self::STATUS_PARTIAL],
+                $form_summary[self::STATUS_FAILED]
+            ),
+            sprintf(
+                '<info>✓:%d</info> <error>✗:%d</error>',
+                $access_summary[self::ACCESS_STATUS_SUCCESS],
+                $access_summary[self::ACCESS_STATUS_FAILED]
             ),
             $total_issues > 0
                 ? sprintf('<error>Issues: %d</error>', $total_issues)
