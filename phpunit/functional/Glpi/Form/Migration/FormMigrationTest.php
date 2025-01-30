@@ -40,6 +40,7 @@ use DbTestCase;
 use Glpi\Form\Category;
 use Glpi\Form\Form;
 use Glpi\Form\Migration\FormMigration;
+use Glpi\Form\Migration\FormMigrationResult;
 use Glpi\Form\Migration\MigrationManager;
 use Glpi\Form\Question;
 use Glpi\Form\QuestionType\QuestionTypeActorsDefaultValueConfig;
@@ -512,15 +513,15 @@ final class FormMigrationTest extends DbTestCase
 
         /** @var Form $form */
         $questions = $form->getQuestions();
-        $exportable_questions = array_filter($questions, function ($question) {
+        $exportable_questions = array_filter($questions, function ($question) use ($mm) {
             return in_array(
                 $question->getQuestionType()::class,
-                array_values(FormMigration::getTypesConvertMap())
+                array_values((new FormMigration($mm, new FormMigrationResult()))->getTypesConvertMap())
             );
         });
 
         $this->assertSameSize(
-            array_filter(array_values(FormMigration::getTypesConvertMap())),
+            array_filter(array_values((new FormMigration($mm, new FormMigrationResult()))->getTypesConvertMap())),
             $exportable_questions
         );
     }

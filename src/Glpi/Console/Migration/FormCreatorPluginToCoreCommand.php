@@ -36,8 +36,10 @@
 namespace Glpi\Console\Migration;
 
 use Glpi\Console\AbstractCommand;
+use Glpi\Form\Migration\ConsoleFormMigrationResult;
 use Glpi\Form\Migration\MigrationManager;
 use Glpi\Helpdesk\DefaultDataManager;
+use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Exception\RuntimeException;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -45,20 +47,6 @@ use Symfony\Component\Console\Output\OutputInterface;
 
 class FormCreatorPluginToCoreCommand extends AbstractCommand
 {
-    /**
-     * Error code returned if plugin version or plugin data is invalid.
-     *
-     * @var integer
-     */
-    public const ERROR_PLUGIN_VERSION_OR_DATA_INVALID = 1;
-
-    /**
-     * Error code returned if import failed.
-     *
-     * @var integer
-     */
-    public const ERROR_PLUGIN_IMPORT_FAILED = 1;
-
     /**
      * Version of Formcreator plugin required for this migration.
      * @var string
@@ -71,13 +59,6 @@ class FormCreatorPluginToCoreCommand extends AbstractCommand
 
         $this->setName('migration:formcreator_plugin_to_core');
         $this->setDescription(__('Migrate Formcreator plugin data into GLPI core tables'));
-
-        $this->addOption(
-            'skip-errors',
-            's',
-            InputOption::VALUE_NONE,
-            __('Do not stop on import errors')
-        );
 
         $this->addOption(
             'truncate',
@@ -99,22 +80,34 @@ class FormCreatorPluginToCoreCommand extends AbstractCommand
 
     protected function execute(InputInterface $input, OutputInterface $output)
     {
-        $migrationManager = new MigrationManager($this->db, $this);
-        if (!$migrationManager->checkPlugin(!$input->getOption('without-plugin'))) {
-            return self::ERROR_PLUGIN_VERSION_OR_DATA_INVALID;
-        }
-
         if ($input->getOption('truncate')) {
             $this->cleanCoreTables();
         }
 
-        if (!$this->migratePlugin()) {
-            return self::ERROR_PLUGIN_IMPORT_FAILED;
+        try {
+            $this->db->beginTransaction();
+
+            $migrationResult = new ConsoleFormMigrationResult($output);
+            $migrationManager = new MigrationManager($this->db);
+            $result = $migrationManager->doMigration(
+                !$input->getOption('without-plugin'),
+                $migrationResult
+            );
+
+            if (!$result->isSuccess()) {
+                $this->db->rollBack();
+                $migrationResult->displayMigrationSummary();
+                return Command::FAILURE;
+            }
+
+            $this->db->commit();
+            $migrationResult->displayMigrationSummary();
+            return Command::SUCCESS;
+        } catch (\Exception $e) {
+            $this->db->rollBack();
+            $output->writeln('<error>' . $e->getMessage() . '</error>');
+            return Command::FAILURE;
         }
-
-        $output->writeln('<info>' . __('Migration done.') . '</info>');
-
-        return 0; // Success
     }
 
     /**
@@ -134,11 +127,6 @@ class FormCreatorPluginToCoreCommand extends AbstractCommand
             'glpi_forms_forms',
             'glpi_forms_questions',
             'glpi_forms_sections',
-            'glpi_plugin_formcreator_forms_groups',
-            'glpi_plugin_formcreator_forms_languages',
-            'glpi_plugin_formcreator_forms_profiles',
-            'glpi_plugin_formcreator_forms_users',
-            'glpi_plugin_formcreator_forms_validators'
         ];
 
         foreach ($core_tables as $table) {
@@ -154,26 +142,5 @@ class FormCreatorPluginToCoreCommand extends AbstractCommand
         // Create default forms
         $helpdesk_data_manager = new DefaultDataManager();
         $helpdesk_data_manager->initializeDataIfNeeded();
-    }
-
-    private function migratePlugin()
-    {
-        $no_interaction = $this->input->getOption('no-interaction');
-        $skip_errors = $this->input->getOption('skip-errors');
-
-        if (!$no_interaction) {
-            // Ask for confirmation (unless --no-interaction)
-            $this->output->writeln(
-                [
-                    __('You are about to launch migration of Formcreator plugin data into GLPI core tables.'),
-                    __('It is better to make a backup of your existing data before continuing.')
-                ]
-            );
-
-            $this->askForConfirmation(false);
-        }
-
-        $migrationManager = new MigrationManager($this->db, $this);
-        return $migrationManager->doMigration() || $skip_errors;
     }
 }

@@ -36,43 +36,36 @@
 namespace Glpi\Form\Migration;
 
 use DBmysql;
-use Glpi\Console\AbstractCommand;
 use Glpi\Console\Migration\FormCreatorPluginToCoreCommand;
 use Plugin;
-use Symfony\Component\Console\Output\OutputInterface;
 
 final class MigrationManager
 {
     private DBmysql $DB;
-    private ?AbstractCommand $command;
     private array $keysMap = [];
 
-    public function __construct(DBmysql $DB, ?AbstractCommand $command = null)
+    public function __construct(DBmysql $DB)
     {
-        $this->DB      = $DB;
-        $this->command = $command;
+        $this->DB = $DB;
     }
 
-    public function doMigration($check_version = true): bool
+    public function doMigration($check_version = true, ?FormMigrationResult $result = null): FormMigrationResult
     {
-        if (!$this->checkPlugin($check_version)) {
-            return false;
+        $result = $result ?? new FormMigrationResult();
+
+        if (!$this->checkPlugin($check_version, $result)) {
+            return $result;
         }
 
         // Process migration of forms
-        FormMigration::processMigrationOfForms($this);
+        (new FormMigration($this, $result))->processMigrationOfForms();
 
-        return true;
+        return $result;
     }
 
     public function getDB(): DBmysql
     {
         return $this->DB;
-    }
-
-    public function getCommand(): ?AbstractCommand
-    {
-        return $this->command;
     }
 
     public function getKeysMap(): array
@@ -122,33 +115,23 @@ final class MigrationManager
         return array_values($sorted_items);
     }
 
-    public function checkPlugin(bool $check_version = true): bool
+    public function checkPlugin(bool $check_version, FormMigrationResult $result): bool
     {
         if ($check_version) {
-            $this->writeOutput(
-                '<comment>' . __('Checking plugin version...') . '</comment>',
-                OutputInterface::VERBOSITY_VERBOSE
-            );
+            $result->addInfo(__('Checking plugin version...'));
 
             $plugin = new Plugin();
             if (!$plugin->getFromDBbyDir('formcreator')) {
-                $this->writeOutput(
-                    '<error>' . __('Formcreator plugin is not installed.') . '</error>',
-                    OutputInterface::VERBOSITY_QUIET
-                );
+                $result->addError(__('Formcreator plugin is not installed.'));
                 return false;
             }
 
             $is_version_ok = FormCreatorPluginToCoreCommand::FORMCREATOR_REQUIRED_VERSION === $plugin->fields['version'];
             if (!$is_version_ok) {
-                $message = sprintf(
+                $result->addError(sprintf(
                     __('Last Formcreator version (%s) is required to be able to continue.'),
                     FormCreatorPluginToCoreCommand::FORMCREATOR_REQUIRED_VERSION
-                );
-                $this->writeOutput(
-                    '<error>' . $message . '</error>',
-                    OutputInterface::VERBOSITY_QUIET
-                );
+                ));
                 return false;
             }
         }
@@ -162,28 +145,15 @@ final class MigrationManager
         $missing_tables = false;
         foreach ($formcreator_tables as $table) {
             if (!$this->DB->tableExists($table)) {
-                $this->writeOutput(
-                    '<error>' . sprintf(__('Formcreator plugin table "%s" is missing.'), $table) . '</error>',
-                    OutputInterface::VERBOSITY_QUIET
-                );
+                $result->addError(sprintf(__('Formcreator plugin table "%s" is missing.'), $table));
                 $missing_tables = true;
             }
         }
         if ($missing_tables) {
-            $this->writeOutput(
-                '<error>' . __('Migration cannot be done.') . '</error>',
-                OutputInterface::VERBOSITY_QUIET
-            );
+            $result->addError(__('Migration cannot be done.'));
             return false;
         }
 
         return true;
-    }
-
-    private function writeOutput(string $message, int $verbosity): void
-    {
-        if ($this->command !== null) {
-            $this->command->getOutput()->writeln($message, $verbosity);
-        }
     }
 }

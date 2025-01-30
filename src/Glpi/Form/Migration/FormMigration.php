@@ -56,15 +56,25 @@ use Glpi\Form\QuestionType\QuestionTypeRequestType;
 use Glpi\Form\QuestionType\QuestionTypeShortText;
 use Glpi\Form\QuestionType\QuestionTypeUrgency;
 use Glpi\Form\Section;
+use LogicException;
 
 final class FormMigration
 {
+    private MigrationManager $migrationManager;
+    private FormMigrationResult $result;
+
+    public function __construct(MigrationManager $migrationManager, FormMigrationResult $result)
+    {
+        $this->migrationManager = $migrationManager;
+        $this->result = $result;
+    }
+
     /**
      * Retrieve the map of types to convert
      *
      * @return array
      */
-    public static function getTypesConvertMap(): array
+    public function getTypesConvertMap(): array
     {
         return [
             // TODO: We do not have a question of type "Actor",
@@ -106,32 +116,26 @@ final class FormMigration
         ];
     }
 
-    /**
-     * Process migration of forms
-     *
-     * @param MigrationManager $migrationManager
-     * @return void
-     */
-    public static function processMigrationOfForms(MigrationManager $migrationManager): void
+    public function processMigrationOfForms(): void
     {
-        self::processMigrationOfFormCategories($migrationManager);
-        self::processMigrationOfBasicProperties($migrationManager);
-        self::processMigrationOfSections($migrationManager);
-        self::processMigrationOfQuestions($migrationManager);
-        self::processMigrationOfComments($migrationManager);
-        self::updateBlockHorizontalRank($migrationManager);
+        $this->processMigrationOfFormCategories();
+        $this->processMigrationOfBasicProperties();
+        $this->processMigrationOfSections();
+        $this->processMigrationOfQuestions();
+        $this->processMigrationOfComments();
+        $this->updateBlockHorizontalRank();
     }
 
-    public static function processMigrationOfFormCategories(MigrationManager $mm): void
+    public function processMigrationOfFormCategories(): void
     {
         // Retrieve data from glpi_plugin_formcreator_categories table
-        $raw_form_categories = $mm->getDB()->request([
+        $raw_form_categories = $this->migrationManager->getDB()->request([
             'SELECT' => ['id', 'name', 'plugin_formcreator_categories_id'],
             'FROM'   => 'glpi_plugin_formcreator_categories'
         ]);
 
         // Sort items by their parent dependencies
-        $raw_form_categories = $mm->sortItems(
+        $raw_form_categories = $this->migrationManager->sortItems(
             iterator_to_array($raw_form_categories),
             'id',
             'plugin_formcreator_categories_id'
@@ -141,20 +145,20 @@ final class FormMigration
             $form_category = new Category();
             $id = $form_category->add([
                 'name'                => $raw_form_category['name'],
-                'forms_categories_id' => $mm->getKeyMap(
+                'forms_categories_id' => $this->migrationManager->getKeyMap(
                     'glpi_plugin_formcreator_categories',
                     $raw_form_category['plugin_formcreator_categories_id']
                 )
             ]);
 
-            $mm->addKeyMap('glpi_plugin_formcreator_categories', $raw_form_category['id'], $id);
+            $this->migrationManager->addKeyMap('glpi_plugin_formcreator_categories', $raw_form_category['id'], $id);
         }
     }
 
-    public static function processMigrationOfBasicProperties(MigrationManager $mm): void
+    public function processMigrationOfBasicProperties(): void
     {
         // Retrieve data from glpi_plugin_formcreator_forms table
-        $raw_forms = $mm->getDB()->request([
+        $raw_forms = $this->migrationManager->getDB()->request([
             'SELECT' => [
                 'id',
                 'description AS header',
@@ -172,7 +176,7 @@ final class FormMigration
             $id = $form->add([
                 'name'                  => $raw_form['name'],
                 'header'                => $raw_form['header'],
-                'forms_categories_id'   => $mm->getKeyMap(
+                'forms_categories_id'   => $this->migrationManager->getKeyMap(
                     'glpi_plugin_formcreator_categories',
                     $raw_form['plugin_formcreator_categories_id']
                 ) ?? 0,
@@ -182,14 +186,14 @@ final class FormMigration
                 '_do_not_init_sections' => true
             ]);
 
-            $mm->addKeyMap('glpi_plugin_formcreator_forms', $raw_form['id'], $id);
+            $this->migrationManager->addKeyMap('glpi_plugin_formcreator_forms', $raw_form['id'], $id);
         }
     }
 
-    public static function processMigrationOfSections(MigrationManager $mm): void
+    public function processMigrationOfSections(): void
     {
         // Retrieve data from glpi_plugin_formcreator_sections table
-        $raw_sections = $mm->getDB()->request([
+        $raw_sections = $this->migrationManager->getDB()->request([
             'SELECT' => ['id', 'name', 'plugin_formcreator_forms_id', 'order'],
             'FROM'   => 'glpi_plugin_formcreator_sections'
         ]);
@@ -197,7 +201,7 @@ final class FormMigration
         foreach ($raw_sections as $raw_section) {
             $section = new Section();
             $id = $section->add([
-                Form::getForeignKeyField() => $mm->getKeyMap(
+                Form::getForeignKeyField() => $this->migrationManager->getKeyMap(
                     'glpi_plugin_formcreator_forms',
                     $raw_section['plugin_formcreator_forms_id']
                 ),
@@ -205,16 +209,32 @@ final class FormMigration
                 'rank'                     => $raw_section['order'] - 1 // New rank is 0-based
             ]);
 
-            $mm->addKeyMap('glpi_plugin_formcreator_sections', $raw_section['id'], $id);
+            $this->migrationManager->addKeyMap('glpi_plugin_formcreator_sections', $raw_section['id'], $id);
         }
     }
 
-    public static function processMigrationOfQuestions(MigrationManager $mm): void
+    public function processMigrationOfQuestions(): void
     {
-        $types_convert_map = self::getTypesConvertMap();
+        $types_convert_map = $this->getTypesConvertMap();
+        $forms_questions = [];
 
-        // Retrieve data from glpi_plugin_formcreator_questions table
-        $raw_questions = array_values(iterator_to_array($mm->getDB()->request([
+        // Initialize stats for all forms
+        $raw_forms = $this->migrationManager->getDB()->request([
+            'SELECT' => ['id', 'name'],
+            'FROM'   => 'glpi_plugin_formcreator_forms'
+        ]);
+        foreach ($raw_forms as $raw_form) {
+            $forms_questions[$raw_form['id']] = [
+                'name' => $raw_form['name'],
+                'total' => 0,
+                'migrated' => 0,
+                'partial' => 0,
+                'skipped' => 0,
+            ];
+        }
+
+        // Process questions
+        $raw_questions = array_values(iterator_to_array($this->migrationManager->getDB()->request([
             'SELECT' => [
                 'id',
                 'name',
@@ -233,50 +253,123 @@ final class FormMigration
             'ORDER'  => ['plugin_formcreator_sections_id', 'row', 'col']
         ])));
 
-        for ($index = 0; $index < count($raw_questions); $index++) {
-            $raw_question = $raw_questions[$index];
-            $fieldtype    = $raw_question['fieldtype'];
-            $type_class   = $types_convert_map[$fieldtype] ?? null;
+        foreach ($raw_questions as $raw_question) {
+            $section_id = $raw_question['plugin_formcreator_sections_id'];
+            $form_id = $this->getFormIdFromSectionId($section_id);
+            $forms_questions[$form_id]['total']++;
+
+            $fieldtype = $raw_question['fieldtype'];
+            $type_class = $types_convert_map[$fieldtype] ?? null;
 
             if (empty($type_class)) {
+                $forms_questions[$form_id]['skipped']++;
+                $this->result->addSkippedQuestion(
+                    $forms_questions[$form_id]['name'],
+                    $raw_question['name'],
+                    $fieldtype,
+                    'Question type not supported'
+                );
                 continue;
             }
 
-            $default_value = null;
-            $extra_data = null;
-            if (is_a($type_class, 'Glpi\Form\Migration\FormQuestionDataConverterInterface', true)) {
-                $converter     = new $type_class();
-                $default_value = $converter->convertDefaultValue($raw_question);
-                $extra_data    = $converter->convertExtraData($raw_question);
+            try {
+                $default_value = null;
+                $extra_data = null;
+                if (is_a($type_class, 'Glpi\Form\Migration\FormQuestionDataConverterInterface', true)) {
+                    $converter     = new $type_class();
+                    $default_value = $converter->convertDefaultValue($raw_question);
+                    $extra_data    = $converter->convertExtraData($raw_question);
+                }
+
+                $question = new Question();
+                $data = array_filter([
+                    Section::getForeignKeyField() => $this->migrationManager->getKeyMap(
+                        'glpi_plugin_formcreator_sections',
+                        $raw_question['plugin_formcreator_sections_id']
+                    ),
+                    'name'                        => $raw_question['name'],
+                    'type'                        => $type_class,
+                    'is_mandatory'                => $raw_question['required'],
+                    'vertical_rank'               => $raw_question['row'],
+                    'horizontal_rank'             => $raw_question['col'],
+                    'description'                 => !empty($raw_question['description'])
+                                                      ? $raw_question['description']
+                                                      : null,
+                    'default_value'               => $default_value,
+                    'extra_data'                  => $extra_data
+                ], fn ($value) => $value !== null);
+                $id = $question->add($data); // Filter array to remove null values
+
+                $this->migrationManager->addKeyMap('glpi_plugin_formcreator_questions', $raw_question['id'], $id);
+                $forms_questions[$form_id]['migrated']++;
+            } catch (\Exception $e) {
+                $forms_questions[$form_id]['skipped']++;
+                $this->result->addSkippedQuestion(
+                    $forms_questions[$form_id]['name'],
+                    $raw_question['name'],
+                    $fieldtype,
+                    $e->getMessage()
+                );
+            }
+        }
+
+        // Update form status based on questions migration
+        foreach ($forms_questions as $form_id => $stats) {
+            if ($stats['total'] === 0) {
+                $this->result->addFormStatus(
+                    $stats['name'],
+                    FormMigrationResult::STATUS_SUCCESS,
+                    'No questions in this form'
+                );
+                continue;
             }
 
-            $question = new Question();
-            $data = array_filter([
-                Section::getForeignKeyField() => $mm->getKeyMap(
-                    'glpi_plugin_formcreator_sections',
-                    $raw_question['plugin_formcreator_sections_id']
-                ),
-                'name'                        => $raw_question['name'],
-                'type'                        => $type_class,
-                'is_mandatory'                => $raw_question['required'],
-                'vertical_rank'               => $raw_question['row'],
-                'horizontal_rank'             => $raw_question['col'],
-                'description'                 => !empty($raw_question['description'])
-                                                  ? $raw_question['description']
-                                                  : null,
-                'default_value'               => $default_value,
-                'extra_data'                  => $extra_data
-            ], fn ($value) => $value !== null);
-            $id = $question->add($data); // Filter array to remove null values
-
-            $mm->addKeyMap('glpi_plugin_formcreator_questions', $raw_question['id'], $id);
+            if ($stats['migrated'] === $stats['total']) {
+                $this->result->addFormStatus(
+                    $stats['name'],
+                    FormMigrationResult::STATUS_SUCCESS
+                );
+            } elseif ($stats['migrated'] === 0) {
+                $this->result->addFormStatus(
+                    $stats['name'],
+                    FormMigrationResult::STATUS_FAILED,
+                    'No questions were successfully migrated'
+                );
+            } else {
+                $this->result->addFormStatus(
+                    $stats['name'],
+                    FormMigrationResult::STATUS_PARTIAL,
+                    sprintf(
+                        'Migrated: %d, Skipped: %d',
+                        $stats['migrated'],
+                        $stats['skipped']
+                    )
+                );
+            }
         }
     }
 
-    public static function processMigrationOfComments(MigrationManager $mm): void
+    private function getFormIdFromSectionId(int $section_id): int
+    {
+        $raw_section = $this->migrationManager->getDB()->request([
+            'SELECT' => ['plugin_formcreator_forms_id'],
+            'FROM'   => 'glpi_plugin_formcreator_sections',
+            'WHERE'  => ['id' => $section_id]
+        ])->current();
+
+        return $raw_section['plugin_formcreator_forms_id'];
+    }
+
+    private function getFormName(int $form_id): string
+    {
+        // Implement form name lookup from form ID
+        return "Form #" . $form_id; // This is a placeholder
+    }
+
+    public function processMigrationOfComments(): void
     {
         // Retrieve data from glpi_plugin_formcreator_questions table
-        $raw_comments = $mm->getDB()->request([
+        $raw_comments = $this->migrationManager->getDB()->request([
             'SELECT' => [
                 'id',
                 'name',
@@ -295,7 +388,7 @@ final class FormMigration
         foreach ($raw_comments as $raw_comment) {
             $comment = new Comment();
             $id = $comment->add([
-                Section::getForeignKeyField() => $mm->getKeyMap(
+                Section::getForeignKeyField() => $this->migrationManager->getKeyMap(
                     'glpi_plugin_formcreator_sections',
                     $raw_comment['plugin_formcreator_sections_id']
                 ),
@@ -305,17 +398,16 @@ final class FormMigration
                 'horizontal_rank'             => $raw_comment['col']
             ]);
 
-            $mm->addKeyMap('glpi_plugin_formcreator_questions', $raw_comment['id'], $id);
+            $this->migrationManager->addKeyMap('glpi_plugin_formcreator_questions', $raw_comment['id'], $id);
         }
     }
 
     /**
      * Update horizontal rank of questions and comments to be consistent with the new form system
      *
-     * @param MigrationManager $mm
      * @return void
      */
-    public static function updateBlockHorizontalRank(MigrationManager $mm): void
+    public function updateBlockHorizontalRank(): void
     {
         $tables = [Question::getTable(), Comment::getTable()];
 
@@ -342,7 +434,7 @@ final class FormMigration
         };
 
         foreach ($tables as $table) {
-            $mm->getDB()->update(
+            $this->migrationManager->getDB()->update(
                 $table,
                 ['horizontal_rank' => null],
                 [
