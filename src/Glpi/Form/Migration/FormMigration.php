@@ -360,12 +360,6 @@ final class FormMigration
         return $raw_section['plugin_formcreator_forms_id'];
     }
 
-    private function getFormName(int $form_id): string
-    {
-        // Implement form name lookup from form ID
-        return "Form #" . $form_id; // This is a placeholder
-    }
-
     public function processMigrationOfComments(): void
     {
         // Retrieve data from glpi_plugin_formcreator_questions table
