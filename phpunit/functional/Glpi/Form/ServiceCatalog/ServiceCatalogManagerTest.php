@@ -90,7 +90,7 @@ final class ServiceCatalogManagerTest extends \DbTestCase
         // Act: get the forms from the catalog manager and extract their names
         $access_parameters = $this->getDefaultParametersForTestUser();
         $item_request = new ItemRequest(access_parameters: $access_parameters);
-        $forms = self::$manager->getItems($item_request);
+        $forms = self::$manager->getItems($item_request)['items'];
         $forms_names = array_map(fn (Form $form) => $form->fields['name'], $forms);
 
         // Assert: only active forms must be found.
@@ -123,7 +123,7 @@ final class ServiceCatalogManagerTest extends \DbTestCase
         // Act: get the forms from the catalog manager and extract their names
         $access_parameters = $this->getDefaultParametersForTestUser();
         $item_request = new ItemRequest(access_parameters: $access_parameters);
-        $forms = self::$manager->getItems($item_request);
+        $forms = self::$manager->getItems($item_request)['items'];
         $forms_names = array_map(fn (ServiceCatalogItemInterface $item) => $item->getServiceCatalogItemTitle(), $forms);
 
         // Assert: forms must be ordered by name
@@ -154,7 +154,7 @@ final class ServiceCatalogManagerTest extends \DbTestCase
         // Act: get the forms from the catalog manager and extract their names
         $access_parameters = $this->getDefaultParametersForTestUser();
         $item_request = new ItemRequest(access_parameters: $access_parameters);
-        $forms = self::$manager->getItems($item_request);
+        $forms = self::$manager->getItems($item_request)['items'];
         $forms_names = array_map(fn (Form $form) => $form->fields['name'], $forms);
 
         // Assert: our form must be found
@@ -171,7 +171,7 @@ final class ServiceCatalogManagerTest extends \DbTestCase
         // Act: get the forms from the catalog manager and extract their names
         $access_parameters = $this->getDefaultParametersForTestUser();
         $item_request = new ItemRequest(access_parameters: $access_parameters);
-        $forms = self::$manager->getItems($item_request);
+        $forms = self::$manager->getItems($item_request)['items'];
         $forms_names = array_map(fn (Form $form) => $form->fields['name'], $forms);
 
         // Assert: our form must not be found
@@ -195,7 +195,7 @@ final class ServiceCatalogManagerTest extends \DbTestCase
         // Act: get the forms from the catalog manager and extract their names
         $access_parameters = $this->getDefaultParametersForTestUser();
         $item_request = new ItemRequest(access_parameters: $access_parameters);
-        $forms = self::$manager->getItems($item_request);
+        $forms = self::$manager->getItems($item_request)['items'];
         $forms_names = array_map(fn (Form $form) => $form->fields['name'], $forms);
 
         // Assert: our form must not be found
@@ -254,7 +254,7 @@ final class ServiceCatalogManagerTest extends \DbTestCase
         );
         $access_parameters = new FormAccessParameters($session_info, []);
         $item_request = new ItemRequest(access_parameters: $access_parameters);
-        $forms = self::$manager->getItems($item_request);
+        $forms = self::$manager->getItems($item_request)['items'];
         $nb_forms = count($forms);
 
         // Assert: list should be empty if we don't expect the user to see the form
@@ -353,7 +353,7 @@ final class ServiceCatalogManagerTest extends \DbTestCase
             access_parameters: $access_parameters,
             filter: $filter,
         );
-        $forms = self::$manager->getItems($item_request);
+        $forms = self::$manager->getItems($item_request)['items'];
 
         // Assert: only the expected forms must be found
         $forms_names = array_map(fn (Form $form) => $form->fields['name'], $forms);
@@ -383,7 +383,7 @@ final class ServiceCatalogManagerTest extends \DbTestCase
         // Act: get the root items from the catalog manager and extract their names
         $access_parameters = $this->getDefaultParametersForTestUser();
         $item_request = new ItemRequest(access_parameters: $access_parameters);
-        $items = self::$manager->getItems($item_request);
+        $items = self::$manager->getItems($item_request)['items'];
         $items_names = array_map(
             fn (ServiceCatalogItemInterface $item) => $item->getServiceCatalogItemTitle(),
             $items
@@ -423,7 +423,7 @@ final class ServiceCatalogManagerTest extends \DbTestCase
             access_parameters: $access_parameters,
             category: $category_a,
         );
-        $items = self::$manager->getItems($item_request);
+        $items = self::$manager->getItems($item_request)['items'];
         $items_names = array_map(
             fn (ServiceCatalogItemInterface $item) => $item->getServiceCatalogItemTitle(),
             $items
@@ -461,7 +461,7 @@ final class ServiceCatalogManagerTest extends \DbTestCase
             access_parameters: $access_parameters,
             filter: 'C',
         );
-        $items = self::$manager->getItems($item_request);
+        $items = self::$manager->getItems($item_request)['items'];
         $items_names = array_map(
             fn (ServiceCatalogItemInterface $item) => $item->getServiceCatalogItemTitle(),
             $items
@@ -506,7 +506,7 @@ final class ServiceCatalogManagerTest extends \DbTestCase
         // Act: get the root items
         $access_parameters = $this->getDefaultParametersForTestUser();
         $item_request = new ItemRequest(access_parameters: $access_parameters);
-        $items = self::$manager->getItems($item_request);
+        $items = self::$manager->getItems($item_request)['items'];
         $items_names = array_map(
             fn (ServiceCatalogItemInterface $item) => $item->getServiceCatalogItemTitle(),
             $items
